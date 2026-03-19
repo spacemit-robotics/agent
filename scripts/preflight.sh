@@ -64,7 +64,16 @@ parse_capabilities() {
       gsub(/^      - /,"")
       models = models ? models","$0 : $0; next
     }
-    cap && /^    models:/ { models_sec=1; next }
+    cap && /^    models:/ {
+      if (/\[.*\]/) {
+        gsub(/.*\[/,""); gsub(/\]/,""); gsub(/ /,"")
+        if ($0 != "") models = models ? models","$0 : $0
+        models_sec=0
+      } else {
+        models_sec=1
+      }
+      next
+    }
     cap && /^    hardware:/ {
       models_sec=0
       if (/\[.*\]/) {
@@ -258,13 +267,19 @@ while IFS='|' read -r cap_id _ _ _ cap_deps; do
   for dep in "${dep_arr[@]}"; do
     [[ -z "$dep" ]] && continue
     HAS_DEPS=true
-    dep_yaml=$(find_module_yaml "$dep")
-    if [[ -n "$dep_yaml" ]]; then
-      echo "[OK] ${cap_id} → ${dep} (已注册)"
+    # 模块内 capability 依赖（如 llm.server 在 llm 模块内）：跳过外部查找
+    dep_module="${dep%%.*}"
+    if [[ "$dep_module" == "$MODULE" ]]; then
+      echo "[OK] ${cap_id} → ${dep} (模块内依赖)"
     else
-      echo "[MISSING] ${cap_id} → ${dep}"
-      READY=false
-      DEPS_MISSING=true
+      dep_yaml=$(find_module_yaml "$dep_module")
+      if [[ -n "$dep_yaml" ]]; then
+        echo "[OK] ${cap_id} → ${dep} (已注册)"
+      else
+        echo "[MISSING] ${cap_id} → ${dep}"
+        READY=false
+        DEPS_MISSING=true
+      fi
     fi
   done
 done <<< "$CAPS"
